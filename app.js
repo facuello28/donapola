@@ -11,7 +11,7 @@ const CONFIG_DEFAULT = {
         'Chocolate y chips de colores', 'Canela', 'Chocolate y rocklets',
         'Vainilla con galletita', 'Chocolate y maní'
     ],
-    precios: { unidad: 90, docena_parcial: 150, caja_seis: 390, brochette: 90 },
+    precios: { unidad: 80, docena_parcial: 150, caja_seis: 390, brochette: 90 },
     diasAviso: 2
 };
 
