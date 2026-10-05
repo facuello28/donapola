@@ -1,4 +1,4 @@
-const CACHE_NAME = 'donapola-v1';
+const CACHE_NAME = 'donapola-v2';
 const ASSETS = [
   './',
   './index.html',
