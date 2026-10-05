@@ -15,18 +15,66 @@ const CONFIG_DEFAULT = {
     diasAviso: 2
 };
 
+// Nombres de precios usados por versiones anteriores de la app
+const CLAVES_PRECIOS_ANTERIORES = { u: 'unidad', d: 'docena_parcial', b: 'caja_seis', br: 'brochette' };
+
+// Convierte un pedido de la versión anterior (qty / br / custom) al formato actual.
+// Si el pedido ya está en el formato actual, lo devuelve sin cambios.
+function migrarPedidoAntiguo(pedido) {
+    const esFormatoAnterior = 'qty' in pedido || 'custom' in pedido || 'br' in pedido;
+    if (!esFormatoAnterior) return pedido;
+
+    const cantidades = pedido.qty || {};
+    const brochettes = pedido.br || 0;
+    const totalDonas = Object.values(cantidades).reduce((a, b) => a + b, 0);
+
+    return {
+        id: pedido.id, cliente: pedido.cliente, tel: pedido.tel,
+        fecha: pedido.fecha, hora: pedido.hora, notas: pedido.notas, estado: pedido.estado,
+        cantidades,
+        brochettes,
+        tipoPaquete: totalDonas === 0 && brochettes > 0 ? 'brochette' : 'custom',
+        cantidadCustom: totalDonas,
+        precioPersonalizado: !!pedido.custom,
+        precio: pedido.precio // el precio ya guardado se respeta
+    };
+}
+
+// Toma datos guardados o de un respaldo (posiblemente viejos o incompletos)
+// y devuelve un estado completo y válido.
+function normalizarEstado(datos) {
+    const origen = (datos && typeof datos === 'object') ? datos : {};
+
+    // Precios: traducir nombres viejos y descartar valores que no sean números
+    const guardados = { ...origen.precios };
+    for (const [vieja, nueva] of Object.entries(CLAVES_PRECIOS_ANTERIORES)) {
+        if (guardados[vieja] !== undefined && guardados[nueva] === undefined) guardados[nueva] = guardados[vieja];
+    }
+    const precios = { ...CONFIG_DEFAULT.precios };
+    for (const clave of Object.keys(precios)) {
+        const valor = Number(guardados[clave]);
+        if (guardados[clave] !== undefined && Number.isFinite(valor) && valor >= 0) precios[clave] = valor;
+    }
+
+    return {
+        pedidos: Array.isArray(origen.pedidos) ? origen.pedidos.map(migrarPedidoAntiguo) : [],
+        sabores: Array.isArray(origen.sabores) ? origen.sabores : [...CONFIG_DEFAULT.sabores],
+        precios,
+        diasAviso: [1, 2, 3].includes(Number(origen.diasAviso)) ? Number(origen.diasAviso) : CONFIG_DEFAULT.diasAviso
+    };
+}
+
 let estadoApp;
 try {
-    const datosGuardados = JSON.parse(localStorage.getItem('donapola') || 'null');
-    estadoApp = Object.assign({}, CONFIG_DEFAULT, datosGuardados || {});
-    estadoApp.precios = Object.assign({}, CONFIG_DEFAULT.precios, estadoApp.precios);
+    estadoApp = normalizarEstado(JSON.parse(localStorage.getItem('donapola') || 'null'));
 } catch (e) {
-    estadoApp = Object.assign({}, CONFIG_DEFAULT);
+    estadoApp = normalizarEstado(null);
 }
 
 const guardarEstado = () => {
     try { localStorage.setItem('donapola', JSON.stringify(estadoApp)); } catch (e) {}
 };
+guardarEstado(); // deja guardado el estado ya migrado
 
 const TEXTOS_ESTADO = ['A completar', 'Completado', 'Entregado', 'Finalizado'];
 const TEXTOS_ACCION = ['Marcar completado', 'Marcar entregado', 'Finalizar', 'Reabrir'];
@@ -94,6 +142,11 @@ const calcularPrecioFinal = pedido => {
     return calcularCostoDonas(obtenerTotalUnidadesElegidas(pedido));
 };
 
+// Precio con el que se guardó el pedido. Así el historial no cambia si después
+// se modifican los precios. (Solo recalcula en pedidos que nunca se guardaron con precio.)
+const obtenerPrecioGuardado = pedido =>
+    typeof pedido.precio === 'number' ? pedido.precio : calcularPrecioFinal(pedido);
+
 /* =========================================
    GENERACIÓN DE HTML (VISTAS)
    ========================================= */
@@ -116,7 +169,7 @@ function generarTarjetaPedido(pedido) {
     <div class="card">
         <div class="row">
             <span class="name">${escaparHTML(pedido.cliente || 'Sin nombre')}</span>
-            <span class="price">${formatearMoneda(calcularPrecioFinal(pedido))}</span>
+            <span class="price">${formatearMoneda(obtenerPrecioGuardado(pedido))}</span>
         </div>
         <div class="when">
             ${formatearEtiquetaFecha(pedido.fecha)}${pedido.hora ? ' · ' + escaparHTML(pedido.hora) : ''}
@@ -205,7 +258,7 @@ const Vistas = {
 
         todos.forEach(p => {
             if (p.tipoPaquete === 'brochette') totalBrochettes += p.brochettes || 0;
-            facturacion += calcularPrecioFinal(p);
+            facturacion += obtenerPrecioGuardado(p);
             donasVendidas += obtenerTotalUnidadesElegidas(p);
             for (const sabor in p.cantidades) ranking[sabor] = (ranking[sabor] || 0) + p.cantidades[sabor];
         });
@@ -563,8 +616,8 @@ document.addEventListener('click', e => {
         case 'restaurar_respaldo':
             try {
                 const datos = JSON.parse($('#texto-respaldo').value);
-                if (!datos.pedidos) throw new Error();
-                estadoApp = Object.assign({}, CONFIG_DEFAULT, datos);
+                if (!Array.isArray(datos.pedidos)) throw new Error();
+                estadoApp = normalizarEstado(datos);
                 guardarEstado();
                 renderizarInterfaz();
                 alert('Respaldo restaurado correctamente');
