@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "DonaPola - Pedidos",
+  "short_name": "DonaPola",
+  "description": "Gestión de pedidos y control de ventas de DonaPola",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff0f5",
+  "theme_color": "#ff4081",
+  "icons": [
+    {
+      "src": "./icons/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
