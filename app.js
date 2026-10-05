@@ -574,13 +574,7 @@ document.addEventListener('click', e => {
             break;
 
         case 'activar_notificaciones':
-            if (!('Notification' in window)) {
-                alert('Este navegador no permite notificaciones');
-                return;
-            }
-            Notification.requestPermission().then(permiso => {
-                alert(permiso == 'granted' ? 'Notificaciones activadas' : 'No se activaron los permisos');
-            });
+            activarNotificaciones();
             break;
     }
 });
@@ -593,19 +587,72 @@ $('#fab').onclick = () => abrirFormulario();
 
 renderizarInterfaz();
 
-try {
-    const pedidosCercanos = estadoApp.pedidos.filter(p => p.estado < 2 && calcularDiferenciaDias(p.fecha) >= 0 && calcularDiferenciaDias(p.fecha) <= estadoApp.diasAviso);
-    const keyNotificacion = 'notif_' + obtenerFechaHoy().getTime();
+/* =========================================
+   NOTIFICACIONES
+   ========================================= */
+// En Android (Chrome) no se puede usar `new Notification()`: hay que pedirle
+// al service worker que la muestre con `showNotification()`.
+const notificacionesDisponibles = () =>
+    'Notification' in window && 'serviceWorker' in navigator;
 
-    if (pedidosCercanos.length && 'Notification' in window && Notification.permission == 'granted' && !localStorage.getItem(keyNotificacion)) {
-        localStorage.setItem(keyNotificacion, "1");
-        new Notification('Donapola: pedidos para preparar', {
-            body: pedidosCercanos.map(p => formatearEtiquetaFecha(p.fecha) + ': ' + p.cliente).join('\n')
-        });
-    }
-} catch (e) {
-    console.error("Error al enviar notificaciones", e);
+async function mostrarNotificacion(titulo, cuerpo, etiqueta = 'donapola') {
+    const registro = await navigator.serviceWorker.ready;
+    await registro.showNotification(titulo, {
+        body: cuerpo,
+        icon: './icons/web-app-manifest-192x192.png',
+        tag: etiqueta // evita que se apilen avisos repetidos
+    });
 }
+
+// Pide permiso (tiene que venir de un toque del usuario) y manda un aviso de prueba.
+async function activarNotificaciones() {
+    if (!notificacionesDisponibles()) return alert('Este navegador no permite notificaciones');
+
+    const permiso = await Notification.requestPermission();
+    if (permiso === 'denied') {
+        return alert('Las notificaciones están bloqueadas. Activalas desde los ajustes del sitio en Chrome.');
+    }
+    if (permiso !== 'granted') return;
+
+    await mostrarNotificacion('¡Listo! 🍩', 'Las notificaciones de Donapola están activadas.', 'prueba');
+    avisarPedidosCercanos();
+}
+
+// Avisa de los pedidos que hay que preparar pronto. Una sola vez por día.
+async function avisarPedidosCercanos() {
+    if (!notificacionesDisponibles() || Notification.permission !== 'granted') return;
+
+    const claveHoy = 'notif_' + obtenerFechaHoy().getTime();
+    try {
+        if (localStorage.getItem(claveHoy)) return;
+
+        const cercanos = estadoApp.pedidos.filter(p => {
+            const dias = calcularDiferenciaDias(p.fecha);
+            return p.estado < 2 && dias >= 0 && dias <= estadoApp.diasAviso;
+        });
+        if (!cercanos.length) return;
+
+        await mostrarNotificacion(
+            'Donapola: pedidos para preparar',
+            cercanos.map(p => formatearEtiquetaFecha(p.fecha) + ': ' + p.cliente).join('\n'),
+            'pedidos-cercanos'
+        );
+
+        // Se marca como avisado recién después de mostrarla con éxito
+        localStorage.setItem(claveHoy, '1');
+        Object.keys(localStorage)
+            .filter(k => k.startsWith('notif_') && k !== claveHoy)
+            .forEach(k => localStorage.removeItem(k));
+    } catch (error) {
+        console.error('Error al mostrar notificaciones', error);
+    }
+}
+
+avisarPedidosCercanos();
+// Si la app quedó abierta en segundo plano, volver a revisar al regresar a ella
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') avisarPedidosCercanos();
+});
 
 
 /* =========================================

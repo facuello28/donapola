@@ -1,4 +1,4 @@
-const CACHE_NAME = 'donapola-v2.1';
+const CACHE_NAME = 'donapola-v2.2';
 const ASSETS = [
   './',
   './index.html',
@@ -48,6 +48,17 @@ self.addEventListener('fetch', event => {
           return caches.match('./index.html');
         }
       });
+    })
+  );
+});
+
+// Al tocar una notificación: enfocar la app si está abierta, o abrirla
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ventanas => {
+      const abierta = ventanas.find(v => 'focus' in v);
+      return abierta ? abierta.focus() : clients.openWindow('./index.html');
     })
   );
 });
